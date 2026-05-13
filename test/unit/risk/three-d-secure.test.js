@@ -137,6 +137,37 @@ describe('ThreeDSecure', function () {
         });
       });
     });
+
+    context('when multiple preflights are provided', function () {
+      beforeEach(function () {
+        this.preflights = [
+          { gateway: { type: 'gateway-a' }, params: { gateway_code: 'code-a' } },
+          { gateway: { type: 'gateway-b' }, params: { gateway_code: 'code-b' } }
+        ];
+
+        const calls = this.calls = [];
+        this.sandbox.stub(ThreeDSecure, 'getStrategyForGatewayType').callsFake((gatewayType) => ({
+          preflight: () => new Promise(resolve => {
+            calls.push({ gatewayType, resolve });
+          })
+        }));
+      });
+
+      it('runs all preflights in parallel', function (done) {
+        const { recurly, bin, preflights, calls } = this;
+        ThreeDSecure.preflight({ recurly, bin, preflights }).done(({ risk }) => {
+          assert.strictEqual(risk.length, 2);
+          assert.strictEqual(risk[0].processor, 'gateway-a');
+          assert.strictEqual(risk[1].processor, 'gateway-b');
+          done();
+        });
+
+        // Both preflights must have started before either resolves
+        assert.strictEqual(calls.length, 2, 'both preflights should start before either resolves');
+        calls[0].resolve({ results: { data: 'a' } });
+        calls[1].resolve({ results: { data: 'b' } });
+      });
+    });
   });
 
   it('adds itself to the provided Risk instance', function () {
